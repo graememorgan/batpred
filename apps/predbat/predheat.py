@@ -324,6 +324,28 @@ class PredHeat:
             self.log("Predheat: Invalid schedule; using history")
             return
 
+        # Climate Scheduler's 5/2 workdays are configurable globally, rather
+        # than being necessarily Monday-Friday. Its get_schedule service does
+        # not include these settings, so fetch them separately.
+        workdays = {"mon", "tue", "wed", "thu", "fri"}
+        use_workday_integration = False
+        if mode == "5/2":
+            try:
+                settings_response = self.call_service(
+                    "climate_scheduler/get_settings", return_response=True
+                )
+            except Exception as exc:
+                self.log("Predheat: Cannot fetch Climate Scheduler settings: {}".format(exc))
+                settings_response = None
+            settings = settings_response.get("settings", {}) if isinstance(settings_response, dict) else {}
+            if isinstance(settings, dict):
+                configured = settings.get("workdays", None)
+                valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+                if (isinstance(configured, list) and configured and
+                        all(isinstance(day, str) and day.lower() in valid_days for day in configured)):
+                    workdays = {day.lower() for day in configured}
+                use_workday_integration = settings.get("use_workday_integration") is True
+
         # Preserve the live setpoint, including a manual override,
         # until the next scheduled temperature change.
         target_entity = self.get_arg(
@@ -355,7 +377,29 @@ class PredHeat:
             if mode == "all_days":
                 key = "all_days"
             elif mode == "5/2":
-                key = "weekday" if weekday < 5 else "weekend"
+                if use_workday_integration:
+                    # Workday's check_date action evaluates future dates, and
+                    # accounts for configured holidays as well as custom days.
+                    # This sensor ID is the one Climate Scheduler itself uses.
+                    sensor = "binary_sensor.workday_sensor"
+                    try:
+                        workday_response = self.call_service(
+                            "workday/check_date",
+                            target={"entity_id": sensor},
+                            check_date=day.isoformat(),
+                            return_response=True,
+                        )
+                    except Exception as exc:
+                        self.log("Predheat: Workday check failed for {}: {}; using history".format(day, exc))
+                        return
+                    result = workday_response.get(sensor) if isinstance(workday_response, dict) else None
+                    if not isinstance(result, dict) or type(result.get("workday")) is not bool:
+                        self.log("Predheat: No valid Workday result for {}; using history".format(day))
+                        return
+                    is_workday = result["workday"]
+                else:
+                    is_workday = day_names[weekday] in workdays
+                key = "weekday" if is_workday else "weekend"
             else:
                 key = day_names[weekday]
 
