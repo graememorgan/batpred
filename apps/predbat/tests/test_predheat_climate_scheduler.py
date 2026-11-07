@@ -20,8 +20,7 @@ def test_predheat_climate_scheduler(my_predbat):
     def local(y, m, d, hour, minute):
         return tz.localize(datetime(y, m, d, hour, minute))
 
-    def make(now, response, live=20.0, settings=None, days=2,
-             scheduler_settings=None, workday_dates=None):
+    def make(now, response, live=20.0, settings=None, days=2, scheduler_settings=None, workday_dates=None):
         my_predbat.args["predheat"] = {
             "forecast_days": days,
             "target_temperature": "sensor.test_room_target",
@@ -57,9 +56,7 @@ def test_predheat_climate_scheduler(my_predbat):
                     raise workday_dates
                 if workday_dates is None:
                     return None
-                return {"binary_sensor.workday_sensor": {
-                    "workday": kwargs["check_date"] in workday_dates
-                }}
+                return {"binary_sensor.workday_sensor": {"workday": kwargs["check_date"] in workday_dates}}
             if isinstance(response, Exception):
                 raise response
             return response
@@ -117,11 +114,12 @@ def test_predheat_climate_scheduler(my_predbat):
         }
         # Friday 23:30 -> Saturday workday, Sunday and Monday non-workdays.
         heat, calls, _ = make(
-            local(2026, 11, 6, 23, 30), response(nodes, "5/2"), days=4,
+            local(2026, 11, 6, 23, 30),
+            response(nodes, "5/2"),
+            days=4,
             scheduler_settings={"workdays": ["fri", "sat"]},
         )
-        values(heat, [(0, 20), (44, 20), (45, 21),
-                      (1484, 21), (1485, 17), (2925, 17)])
+        values(heat, [(0, 20), (44, 20), (45, 21), (1484, 21), (1485, 17), (2925, 17)])
         assert any(service == "climate_scheduler/get_settings" for service, _ in calls)
         assert not any(service == "workday/check_date" for service, _ in calls)
 
@@ -133,19 +131,17 @@ def test_predheat_climate_scheduler(my_predbat):
         # Workday integration overrides the standard week: Saturday is a
         # working day, while Monday is a holiday; normal weekday rules fail.
         heat, calls, _ = make(
-            local(2026, 11, 6, 23, 30), response(nodes, "5/2"), days=4,
+            local(2026, 11, 6, 23, 30),
+            response(nodes, "5/2"),
+            days=4,
             scheduler_settings={"use_workday_integration": True},
             workday_dates={"2026-11-07"},
         )
-        values(heat, [(0, 20), (44, 20), (45, 21),
-                      (1484, 21), (1485, 17), (2925, 17)])
+        values(heat, [(0, 20), (44, 20), (45, 21), (1484, 21), (1485, 17), (2925, 17)])
         checks = [params for service, params in calls if service == "workday/check_date"]
         assert checks, "Expected future workday checks"
-        assert all(check["target"] == {"entity_id": "binary_sensor.workday_sensor"}
-                   and check["return_response"] is True for check in checks)
-        assert {"2026-11-07", "2026-11-09"}.issubset(
-            {check["check_date"] for check in checks}
-        )
+        assert all(check["target"] == {"entity_id": "binary_sensor.workday_sensor"} and check["return_response"] is True for check in checks)
+        assert {"2026-11-07", "2026-11-09"}.issubset({check["check_date"] for check in checks})
 
     def workday_failure():
         nodes = {
@@ -153,7 +149,8 @@ def test_predheat_climate_scheduler(my_predbat):
             "weekend": [{"time": "00:15", "temp": 17}],
         }
         heat, _, _ = make(
-            local(2026, 11, 6, 23, 30), response(nodes, "5/2"),
+            local(2026, 11, 6, 23, 30),
+            response(nodes, "5/2"),
             scheduler_settings={"use_workday_integration": True},
             workday_dates=RuntimeError("unavailable"),
         )
@@ -170,10 +167,7 @@ def test_predheat_climate_scheduler(my_predbat):
 
     def numeric_live():
         nodes = {"all_days": [{"time": "22:00", "temp": 18}]}
-        heat, _, state_calls = make(
-            local(2026, 11, 7, 21, 15), response(nodes), live=100,
-            settings={"target_temperature": 21.25}
-        )
+        heat, _, state_calls = make(local(2026, 11, 7, 21, 15), response(nodes), live=100, settings={"target_temperature": 21.25})
         assert state_calls == []
         values(heat, [(0, 21.25), (44, 21.25), (45, 18)])
 
@@ -210,10 +204,14 @@ def test_predheat_climate_scheduler(my_predbat):
         spring = response({"all_days": [{"time": "03:30", "temp": 21}]})
         heat, _, _ = make(local(2026, 3, 28, 23, 30), spring)
         values(heat, [(179, 20), (180, 21)])
-        autumn = response({"all_days": [
-            {"time": "01:30", "temp": 18},
-            {"time": "03:30", "temp": 21},
-        ]})
+        autumn = response(
+            {
+                "all_days": [
+                    {"time": "01:30", "temp": 18},
+                    {"time": "03:30", "temp": 21},
+                ]
+            }
+        )
         heat, _, _ = make(local(2026, 10, 24, 23, 30), autumn)
         assert heat.schedule_change_minutes[:2] == [120.0, 300.0]
         values(heat, [(119, 20), (120, 18), (299, 18), (300, 21)])
@@ -221,7 +219,9 @@ def test_predheat_climate_scheduler(my_predbat):
     def update_pred_wiring():
         # Exercise the production update_pred path, not just load_target_schedule.
         my_predbat.args["predheat"] = {
-            "mode": "pump", "forecast_days": 2, "days_previous": [7],
+            "mode": "pump",
+            "forecast_days": 2,
+            "days_previous": [7],
             "target_temperature": "sensor.test_room_target",
             "target_temperature_schedule": "climate.test_scheduler",
         }
@@ -265,9 +265,7 @@ def test_predheat_climate_scheduler(my_predbat):
         results = heat.published[heat.prefix + ".target_temp"]["results"]
         for minute, expected in [(350, 18), (360, 21), (530, 21), (540, 16)]:
             timestamp = (heat.midnight_utc + timedelta(minutes=minute)).strftime(TIME_FORMAT)
-            assert results[timestamp] == expected, "simulation at {} expected {}, got {}".format(
-                minute, expected, results.get(timestamp)
-            )
+            assert results[timestamp] == expected, "simulation at {} expected {}, got {}".format(minute, expected, results.get(timestamp))
 
     try:
         check("all_days, overrides and filtering", all_days)

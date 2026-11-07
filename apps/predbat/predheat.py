@@ -295,19 +295,12 @@ class PredHeat:
     def load_target_schedule(self, now_local):
         """Load effective Climate Scheduler targets for this forecast."""
         self.schedule_change_minutes = None
-        entity_id = self.get_arg(
-            "target_temperature_schedule", None,
-            indirect=False, domain="predheat"
-        )
+        entity_id = self.get_arg("target_temperature_schedule", None, indirect=False, domain="predheat")
         if not entity_id:
             return
 
         try:
-            response = self.call_service(
-                "climate_scheduler/get_schedule",
-                schedule_id=entity_id,
-                return_response=True
-            )
+            response = self.call_service("climate_scheduler/get_schedule", schedule_id=entity_id, return_response=True)
         except Exception as exc:
             self.log("Predheat: Cannot fetch heating schedule: {}".format(exc))
             return
@@ -318,9 +311,7 @@ class PredHeat:
 
         schedules = response.get("schedules")
         mode = response.get("schedule_mode", "all_days")
-        if not isinstance(schedules, dict) or mode not in (
-            "all_days", "5/2", "individual"
-        ):
+        if not isinstance(schedules, dict) or mode not in ("all_days", "5/2", "individual"):
             self.log("Predheat: Invalid schedule; using history")
             return
 
@@ -331,9 +322,7 @@ class PredHeat:
         use_workday_integration = False
         if mode == "5/2":
             try:
-                settings_response = self.call_service(
-                    "climate_scheduler/get_settings", return_response=True
-                )
+                settings_response = self.call_service("climate_scheduler/get_settings", return_response=True)
             except Exception as exc:
                 self.log("Predheat: Cannot fetch Climate Scheduler settings: {}".format(exc))
                 settings_response = None
@@ -341,17 +330,13 @@ class PredHeat:
             if isinstance(settings, dict):
                 configured = settings.get("workdays", None)
                 valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
-                if (isinstance(configured, list) and configured and
-                        all(isinstance(day, str) and day.lower() in valid_days for day in configured)):
+                if isinstance(configured, list) and configured and all(isinstance(day, str) and day.lower() in valid_days for day in configured):
                     workdays = {day.lower() for day in configured}
                 use_workday_integration = settings.get("use_workday_integration") is True
 
         # Preserve the live setpoint, including a manual override,
         # until the next scheduled temperature change.
-        target_entity = self.get_arg(
-            "target_temperature", None,
-            indirect=False, domain="predheat"
-        )
+        target_entity = self.get_arg("target_temperature", None, indirect=False, domain="predheat")
         if isinstance(target_entity, str) and "." in target_entity:
             live = self.get_state(entity_id=target_entity, default=None)
         else:
@@ -420,9 +405,7 @@ class PredHeat:
                     if not math.isfinite(temp):
                         continue
 
-                    wall = datetime(
-                        day.year, day.month, day.day, hour, minute
-                    )
+                    wall = datetime(day.year, day.month, day.day, hour, minute)
                     try:
                         when = tz.localize(wall, is_dst=None)
                     except pytz.AmbiguousTimeError:
@@ -430,9 +413,7 @@ class PredHeat:
                     except pytz.NonExistentTimeError:
                         when = tz.normalize(tz.localize(wall, is_dst=False))
 
-                    elapsed = (
-                        when.astimezone(timezone.utc) - now_utc
-                    ).total_seconds() / 60.0
+                    elapsed = (when.astimezone(timezone.utc) - now_utc).total_seconds() / 60.0
 
                     if 0 < elapsed <= self.forecast_minutes:
                         events.append((elapsed, temp))
@@ -449,19 +430,12 @@ class PredHeat:
         self.schedule_change_minutes = [x[0] for x in events]
         self.schedule_change_temperatures = [x[1] for x in events]
 
-        self.log(
-            "Predheat: Using Climate Scheduler {} "
-            "({} future changes, initial {} C)".format(
-                entity_id, len(events), initial
-            )
-        )
+        self.log("Predheat: Using Climate Scheduler {} " "({} future changes, initial {} C)".format(entity_id, len(events), initial))
 
     def get_target_temperature(self, minute):
         """Use the effective schedule, or historical prediction as fallback."""
         if self.schedule_change_minutes is None:
-            return self.get_historical(
-                self.target_temperature, minute, default=20.0
-            )
+            return self.get_historical(self.target_temperature, minute, default=20.0)
         index = bisect_right(self.schedule_change_minutes, minute) - 1
         if index < 0:
             return self.schedule_initial_temperature
